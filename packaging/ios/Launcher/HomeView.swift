@@ -9,6 +9,7 @@ struct HomeView: View {
     @StateObject private var player = PlayerName()
     @StateObject private var head = SkinHead()
     @StateObject private var account = MicrosoftAccount()
+    @StateObject private var ely = ElyByAccount()
     @StateObject private var updates = UpdateChecker()
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var tab = Destination.play
@@ -60,21 +61,28 @@ struct HomeView: View {
             )
         }
         .task(id: shownName) { await head.load(shownName) }
-        .task(id: account.profile) { try? await account.handOver() }
+        .task(id: account.profile) {
+            // Microsoft and Ely.by are never both in use: the account chosen last wins.
+            if account.profile != nil { ely.signOut() }
+            try? await handOver()
+        }
         .onChange(of: account.profile) { profile in
             if profile != nil { editingName = false; nameDraft = "" }
+        }
+        .onChange(of: ely.profile) { profile in
+            if profile != nil {
+                editingName = false; nameDraft = ""
+                if account.profile != nil { account.select(nil) }
+            }
+            Task { try? await handOver() }
         }
         .onChange(of: link.phase) { phase in
             LauncherLog.write("game phase: \(String(describing: phase))")
         }
-        // First run: the launcher starts the game-files download itself, and its card shows the unpacking.
-        .task(id: link.phase) {
-            if link.phase == .waiting { await download.startAutomaticallyIfNeeded() }
-        }
         .task {
             await updates.check()
             link.uncover = onPlay
-            link.prepareSession = { try await account.handOver() }
+            link.prepareSession = { try await handOver() }
             await link.watch()
         }
     }
@@ -160,17 +168,23 @@ struct HomeView: View {
         }
     }
 
-    private var shownName: String? { account.profile?.name ?? player.name }
+    private var shownName: String? { account.profile?.name ?? ely.profile?.name ?? player.name }
+    private var signedIn: Bool { account.profile != nil || ely.profile != nil }
+
+    /// Give the game the account in use: Ely.by when one is signed in, otherwise Microsoft or offline.
+    private func handOver() async throws {
+        if ely.profile != nil { try await ely.handOver() } else { try await account.handOver() }
+    }
 
     private func editName() {
-        guard account.profile == nil else { return }
+        guard !signedIn else { return }
         nameDraft = player.name ?? ""
         nameRejected = false
         editingName = true
     }
 
     private func saveName() {
-        guard account.profile == nil else { return }
+        guard !signedIn else { return }
         if player.save(nameDraft.trimmingCharacters(in: .whitespaces)) {
             editingName = false
             nameRejected = false
@@ -263,9 +277,9 @@ struct HomeView: View {
                 HStack(spacing: 8) {
                     Avatar(name: shownName, face: head.face, size: 26)
                     Text(shownName ?? "Offline player").font(.subheadline.weight(.medium)).lineLimit(1)
-                    if account.profile != nil {
+                    if signedIn {
                         Image(systemName: "checkmark.seal.fill").font(.caption)
-                            .accessibilityLabel("Microsoft account")
+                            .accessibilityLabel(account.profile != nil ? "Microsoft account" : "Ely.by account")
                     }
                 }.foregroundStyle(.white.opacity(0.9))
                     .accessibilityIdentifier("launcher-playing-as")
@@ -317,11 +331,11 @@ struct HomeView: View {
                         Avatar(name: shownName, face: head.face, size: 52)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(shownName ?? "Offline player").font(.headline)
-                            Text(account.profile == nil ? "Offline profile" : "Microsoft account")
+                            Text(account.profile != nil ? "Microsoft account" : ely.profile != nil ? "Ely.by account" : "Offline profile")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 8)
-                    if account.profile == nil {
+                    if !signedIn {
                         if editingName {
                             TextField("Name", text: $nameDraft)
                                 .textInputAutocapitalization(.never)
@@ -347,6 +361,7 @@ struct HomeView: View {
                     }
                 }
                 Section { AccountCard(account: account) }
+                Section { ElyByCard(account: ely) }
             }
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)

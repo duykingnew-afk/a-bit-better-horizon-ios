@@ -625,7 +625,7 @@ struct Failure {
 
 /// The discovery document's `player` service endpoint.
 fn session() -> Option<Arc<AuthSession>> {
-    auth::current().filter(|s| !s.expired())
+    auth::current().filter(|s| s.is_microsoft() && !s.expired())
 }
 
 fn uuid(id: u128) -> String {

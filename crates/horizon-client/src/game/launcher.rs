@@ -370,7 +370,7 @@ fn world_files(request: horizon_ios_launcher::Request) -> Option<horizon_ios_lau
     None
 }
 
-/// `launcher-session {"name", "uuid", "access_token", "user_type": "msa", "xuid"}`: the Microsoft account the
+/// `launcher-session {"name", "uuid", "access_token", "user_type": "msa" or "elyby", "xuid"}`: the Microsoft or Ely.by account the
 /// phone's launcher signed in (the session file's fields, docs/microsoft-account.md), kept in memory only;
 /// `launcher-session off` plays offline again. The token is never echoed back.
 fn session_request(request: horizon_ios_launcher::Request) {
